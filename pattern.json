@@ -1,0 +1,26 @@
+{
+    "base_time": "2024-05-24T00:00:00Z",
+    "traffic_patterns": [
+      {
+        "start_offset": "0m",
+        "source": "AS110",
+        "destination": "AS111",
+        "mode": "bwtester",
+        "parameters": {
+          "bandwidth": "100Mbps",
+          "duration": "10m"
+        }
+      },
+      {
+        "start_offset": "5m",
+        "source": "AS112",
+        "destination": "AS110",
+        "mode": "iperf",
+        "parameters": {
+          "protocol": "TCP",
+          "duration": "15m",
+          "parallel_streams": 4
+        }
+      }
+    ]
+  }
