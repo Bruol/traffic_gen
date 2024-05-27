@@ -27,6 +27,36 @@
           "cs": "70,?,?,1Mbps",
           "sc": "70,?,?,1Mbps"
         }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "bwtester",
+        "parameters": {
+          "cs": "70,?,?,1Mbps",
+          "sc": "70,?,?,1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "bwtester",
+        "parameters": {
+          "cs": "70,?,?,1Mbps",
+          "sc": "70,?,?,1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "bwtester",
+        "parameters": {
+          "cs": "70,?,?,1Mbps",
+          "sc": "70,?,?,1Mbps"
+        }
       }
     ]
   }

@@ -281,7 +281,7 @@ class TrafficGenerator():
         dest_asn = int(pattern["destination"].split("-")[1])
 
         port = self._occupied_ports[dest_asn]+1
-
+        self._occupied_ports[dest_asn] = port
 
         btserver = BWTestServer(dest_asn, port, log_file=f"bwtestserver_{str(pattern_id)}.log")
      
@@ -312,7 +312,7 @@ class TrafficGenerator():
             
         docker = DockerClient(compose_files=[output_dir+"/docker-compose.yml"])
 
-        docker.compose.build()
+        #docker.compose.build()
         docker.compose.up(detach=True)  
 
         
@@ -349,10 +349,12 @@ class TrafficGenerator():
                 raise Exception(f"Invalid mode {pattern['mode']}")
 
             pattern_id += 1
-            
+
+
+
         print("Traffic Generation Completed")
 
-        docker.compose.down()
+
 
 
 if __name__ == "__main__":
