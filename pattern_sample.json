@@ -1,7 +1,7 @@
 {
     "traffic_patterns": [
       {
-        "start_offset": "1m",
+        "start_offset": "0m",
         "source": "1-110",
         "destination": "1-112",
         "mode": "bwtester",
@@ -10,7 +10,7 @@
         }
       },    
       {
-        "start_offset": "90s",
+        "start_offset": "0m",
         "source": "1-110",
         "destination": "1-112",
         "mode": "bwtester",
@@ -24,38 +24,18 @@
         "destination": "1-111",
         "mode": "bwtester",
         "parameters": {
-          "cs": "70,?,?,1Mbps",
-          "sc": "70,?,?,1Mbps"
+          "cs": "10,?,?,1Mbps"
         }
       },
       {
         "start_offset": "0m",
         "source": "1-110",
-        "destination": "1-111",
-        "mode": "bwtester",
+        "destination": "1-112",
+        "mode": "iperf",
         "parameters": {
-          "cs": "70,?,?,1Mbps",
-          "sc": "70,?,?,1Mbps"
-        }
-      },
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-111",
-        "mode": "bwtester",
-        "parameters": {
-          "cs": "70,?,?,1Mbps",
-          "sc": "70,?,?,1Mbps"
-        }
-      },
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-111",
-        "mode": "bwtester",
-        "parameters": {
-          "cs": "70,?,?,1Mbps",
-          "sc": "70,?,?,1Mbps"
+          "bandwidth": "1Mbps",
+          "duration": 30,
+          "packet_size": "1k"
         }
       }
     ]

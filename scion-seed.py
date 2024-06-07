@@ -27,7 +27,7 @@ as110.createControlService('cs_1').joinNetwork('net0')
 as_110_br1 = as110.createRouter('br1').joinNetwork('net0')
 as_110_br1.crossConnect(111,'br1','10.3.0.2/29',latency=0,bandwidth=0,packetDrop=0,MTU=1280)
 as_110_br2 = as110.createRouter('br2').joinNetwork('net0')
-as_110_br2.crossConnect(112,'br1','10.3.0.10/29',latency=0,bandwidth=500,packetDrop=0)
+as_110_br2.crossConnect(112,'br1','10.3.0.10/29',latency=0,bandwidth=0,packetDrop=0)
 
 # AS-111
 as111 = base.createAutonomousSystem(111)
@@ -45,7 +45,7 @@ scion_isd.setCertIssuer((1,112),issuer=110)
 as112.createNetwork('net0').setDefaultLinkProperties(latency=0, bandwidth=0, packetDrop=0)
 as112.createControlService('cs_1').joinNetwork('net0')
 as_112_br1 = as112.createRouter('br1').joinNetwork('net0')
-as_112_br1.crossConnect(110,'br2','10.3.0.11/29',latency=0,bandwidth=500,packetDrop=0)
+as_112_br1.crossConnect(110,'br2','10.3.0.11/29',latency=0,bandwidth=0,packetDrop=0)
 
 
 # Inter-AS routing
