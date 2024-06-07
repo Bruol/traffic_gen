@@ -8,6 +8,7 @@ from typing import List, Dict, Union
 
 import time
 from datetime import datetime
+import keyboard
 
 import os
 import json
@@ -17,6 +18,8 @@ import shutil
 from enum import Enum
 
 from python_on_whales import DockerClient
+import docker
+
 
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
@@ -27,7 +30,7 @@ def getContainerByNameAndAS(asn: int, name: str) -> str:
     """
     @brief Get a container by name and AS number
     """
-    docker = DockerClient(compose_files=[base_dir+"/seed-compiled/docker-compose.yml"])
+    docker = DockerClient()
     containers = docker.ps()
     for container in containers:
         if str(asn) in container.name and name in container.name:
@@ -44,7 +47,7 @@ class Server():
     _docker: DockerClient
     _name: str
 
-    def __init__(self, asn: int, port: int = 40002, nodeName: str= "traffic_gen", log_file: str = "server.log", docker: DockerClient = DockerClient(compose_files=[base_dir+"/seed-compiled/docker-compose.yml"])) -> None:
+    def __init__(self, asn: int, port: int = 50002, nodeName: str= "traffic_gen", log_file: str = "server.log", docker: DockerClient = DockerClient()) -> None:
         self._port = port
         self._asn = asn
         self._nodeName = nodeName
@@ -92,7 +95,7 @@ class Client():
     _resolv_ip_command: str = "/usr/bin/getent hosts {hostname}"
     _name: str
 
-    def __init__(self, source_asn: int, dst_isd: int, dst_asn: int, dst_port: int = 40002, src_node_name: str= "traffic_gen", dst_node_name: str= "traffic_gen", log_file: str = "client.log", docker: DockerClient = DockerClient(compose_files=[base_dir+"/seed-compiled/docker-compose.yml"])) -> None:
+    def __init__(self, source_asn: int, dst_isd: int, dst_asn: int, dst_port: int = 50002, src_node_name: str= "traffic_gen", dst_node_name: str= "traffic_gen", log_file: str = "client.log", docker: DockerClient = DockerClient()) -> None:
         self._port = dst_port
         self._source_asn = source_asn
         self._dst_asn = dst_asn
@@ -135,7 +138,7 @@ class IPerfServer(Server):
             super().__init__(*args, **kwargs)
             self._name = "iperfserver"
             self._command = """\
-iperf3 -s -p {port} > /var/log/traffic_gen/{logfile}\
+iperf3 -s -p {port} --logfile /var/log/traffic_gen/{logfile}\
 """
 
     def start(self) -> None:
@@ -149,42 +152,42 @@ iperf3 -s -p {port} > /var/log/traffic_gen/{logfile}\
 class IPerfClient(Client):
     _bandwidth: str = ""
     _packet_size: str = ""
-    _duration: int = ""
+    _duration: str = ""
     _transmit_size: str = ""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._name = "iperfclient"
         self._command = """\
-iperf3 -c {server_addr} -p {port} -b {bandwidth} -l {packet_size} -t {duration} -n {transmit_size} > /var/log/traffic_gen/{logfile}\
+iperf3 --logfile /var/log/traffic_gen/{logfile} -c {server_addr} -p {port} {bandwidth} {packet_size} {duration} {transmit_size} \
 """
     def setBandwidth(self, bandwidth: str) -> IPerfClient:
-        self._bandwidth = bandwidth
+        self._bandwidth = "-b " + bandwidth
         return self
     
     def getBandwidth(self) -> str:
-        return self._bandwidth
+        return self._bandwidth.replace("-b", "")
     
     def setPacketSize(self, packet_size: str) -> IPerfClient:
-        self._packet_size = packet_size
+        self._packet_size = "-l" + packet_size
         return self
     
     def getPacketSize(self) -> str:
-        return self._packet_size
+        return self._packet_size.replace("-l", "")
     
     def setDuration(self, duration: int) -> IPerfClient:
-        self._duration = duration
+        self._duration = "-t " + str(duration)
         return self
     
     def getDuration(self) -> int:
-        return self._duration
+        return self._duration.replace("-t ", "")
     
     def setTransmitSize(self, transmit_size: str) -> IPerfClient:
-        self._transmit_size = transmit_size
+        self._transmit_size = "-n " + transmit_size
         return self
 
     def getTransmitSize(self) -> str:
-        return self._transmit_size
+        return self._transmit_size.replace("-n ", "")
 
     def start(self) -> None:
         container = getContainerByNameAndAS(self._source_asn, self._src_node_name)
@@ -197,7 +200,7 @@ iperf3 -c {server_addr} -p {port} -b {bandwidth} -l {packet_size} -t {duration} 
                                        duration = self._duration, 
                                        transmit_size = self._transmit_size, 
                                        logfile=self._log_file)
-            self._docker.execute(container, ["/bin/bash","-c",cmd], detach = True)
+            self._docker.execute(container, ["/bin/bash","-c",cmd],detach=True)
         else:
             raise Exception(f"Failed to start BWTestClient on AS{self._source_asn}. Container not found.")
 
@@ -206,9 +209,7 @@ class BWTestServer(Server):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._name = "bwtestserver"
-        self._command = """\
-bash -c "scion-bwtestserver --listen=:{port} >> /var/log/traffic_gen/{logfile}"\
-"""
+        self._command = "scion-bwtestserver --listen=:{port} > /var/log/traffic_gen/{logfile} 2>&1 &"
     
     def start(self) -> None:
         """
@@ -216,7 +217,9 @@ bash -c "scion-bwtestserver --listen=:{port} >> /var/log/traffic_gen/{logfile}"\
         """
         container = getContainerByNameAndAS(self._asn, self._nodeName)
         if container:
-            self._docker.execute(container, ["/bin/bash","-c",self._command.format(port=self._port, logfile=self._log_file)], detach = True)
+            cmd = self._command.format(port=self._port, logfile=self._log_file)
+            self._docker.execute(container, ["/bin/bash","-c",cmd], detach = True)
+            return
         else:
             raise Exception(f"Failed to start BWTestServer on AS{self.asn}. Container not found.")
 
@@ -231,7 +234,7 @@ class BWTestClient(Client):
         self._cs_str = ""
         self._sc_str = ""
         self._command = """\
-scion-bwtestclient -s {server_addr}:{port} {SC} {CS} >> /var/log/traffic_gen/{logfile}\
+scion-bwtestclient -s {server_addr}:{port} {SC} {CS} > /var/log/traffic_gen/{logfile} 2>&1 &\
 """
     
     def setCS(self, cs: str) -> BWTestClient:
@@ -270,10 +273,12 @@ class TrafficGenerator():
     _traffic_pattern: List[Dict[str, Union[str, Dict]]]
     _defaultSoftware: List[str]
     _emu: Emulator
-    _wait_for_up: int = 30
+    _wait_for_up: int = 15 # TODO: add commandline arg
     _occupied_ports: Dict[int, int]
     _enable_bgp: bool = True
     _wait_for_down: int = 10
+    _should_zip: bool = False # TODO: add commandline arg
+
 
     def __init__(self, pattern_file: str):
         
@@ -428,7 +433,7 @@ class TrafficGenerator():
 
         # initialize the occupied ports
         for asn in ases:
-            self._occupied_ports[asn] = 40001 # start from 40002 and increment by 1 for each new server
+            self._occupied_ports[asn] = 50001 # start from 50002 and increment by 1 for each new server
 
         
         # check if ases are already created
@@ -458,7 +463,7 @@ class TrafficGenerator():
         
         dest_asn = int(pattern["destination"].split("-")[1])
 
-        port = self._occupied_ports[dest_asn]+1
+        port = self._occupied_ports[dest_asn]+2
         self._occupied_ports[dest_asn] = port
 
         btserver = BWTestServer(dest_asn, port, log_file=f"bwtestserver_{str(pattern_id)}.log")
@@ -484,7 +489,7 @@ class TrafficGenerator():
         
         dest_asn = int(pattern["destination"].split("-")[1])
 
-        port = self._occupied_ports[dest_asn]+1
+        port = self._occupied_ports[dest_asn]+2
         self._occupied_ports[dest_asn] = port
 
         ipserver = IPerfServer(dest_asn, port, log_file=f"IperfServer_{str(pattern_id)}.log")
@@ -558,7 +563,7 @@ class TrafficGenerator():
             
         docker = DockerClient(compose_files=[output_dir+"/docker-compose.yml"])
 
-        #docker.compose.build()
+        # docker.compose.build()
         docker.compose.up(detach=True)  
 
         
@@ -570,10 +575,14 @@ class TrafficGenerator():
 
         print(f"Waiting for {self._wait_for_down} seconds for traffic generation to finish")
         time.sleep(self._wait_for_down)
+
+
         docker.compose.down()
-        
-        print("Zipping Logs")
-        self._zip_logs()
+
+        if(self._should_zip):
+            print("Zipping Logs")
+            self._zip_logs()
+
 
 
 

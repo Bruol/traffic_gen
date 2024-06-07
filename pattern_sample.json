@@ -21,7 +21,25 @@
       {
         "start_offset": "0m",
         "source": "1-110",
-        "destination": "1-111",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "parameters": {
+          "cs": "10,?,?,1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "parameters": {
+          "cs": "10,?,?,1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
         "mode": "bwtester",
         "parameters": {
           "cs": "10,?,?,1Mbps"
@@ -33,9 +51,27 @@
         "destination": "1-112",
         "mode": "iperf",
         "parameters": {
-          "bandwidth": "1Mbps",
-          "duration": 30,
-          "packet_size": "1k"
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "bwtester",
+        "parameters": {
+          "cs": "10,?,?,1Mbps"
+        }
+      },   
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "iperf",
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
         }
       }
     ]
