@@ -5,8 +5,9 @@
         "source": "1-110",
         "destination": "1-112",
         "mode": "bwtester",
-        "parameters": {
-          "cs": "10,?,?,1Mbps"
+        "specialized_parameters": {
+          "cs": "10,?,?,1Mbps",
+          "sc": "10,?,?,0.5Mbps"
         }
       },    
       {
@@ -15,7 +16,8 @@
         "destination": "1-112",
         "mode": "bwtester",
         "parameters": {
-          "cs": "10,?,?,1Mbps"
+          "duration": 10,
+          "bandwidth": "1Mbps"
         }
       },
       {
@@ -24,7 +26,8 @@
         "destination": "1-112",
         "mode": "bwtester",
         "parameters": {
-          "cs": "10,?,?,1Mbps"
+          "duration": 10,
+          "bandwidth": "1Mbps"
         }
       },
       {
@@ -33,7 +36,8 @@
         "destination": "1-112",
         "mode": "bwtester",
         "parameters": {
-          "cs": "10,?,?,1Mbps"
+          "duration": 10,
+          "bandwidth": "1Mbps"
         }
       },
       {
@@ -42,7 +46,8 @@
         "destination": "1-112",
         "mode": "bwtester",
         "parameters": {
-          "cs": "10,?,?,1Mbps"
+          "duration": 10,
+          "bandwidth": "1Mbps"
         }
       },
       {
@@ -50,6 +55,7 @@
         "source": "1-110",
         "destination": "1-112",
         "mode": "iperf",
+        "sig": true,
         "parameters": {
           "duration": 10,
           "bandwidth": "1Mbps"
@@ -61,7 +67,8 @@
         "destination": "1-111",
         "mode": "bwtester",
         "parameters": {
-          "cs": "10,?,?,1Mbps"
+          "duration": 10,
+          "bandwidth": "1Mbps"
         }
       },   
       {
@@ -69,9 +76,10 @@
         "source": "1-110",
         "destination": "1-111",
         "mode": "iperf",
-        "parameters": {
-          "duration": 10,
-          "bandwidth": "1Mbps"
+        "sig": true,
+        "spezialized_parameters": {
+            "u": "",
+            "t": "10"
         }
       }
     ]

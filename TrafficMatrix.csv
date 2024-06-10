@@ -1,0 +1,4 @@
+Source IA,Destination IA,mode,,,
+1-110,1-112,bwtester,1Mbps,0.5Mbps,10Mbps
+1-110,1-111,iperf,1Mbps,1Mbps,1Mbps
+1-111,1-112,iperf,1Mbps,1Mbps,1Mbps

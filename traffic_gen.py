@@ -1,14 +1,13 @@
 from __future__ import annotations
 from seedemu.compiler import Docker
-from seedemu.core import Emulator
+from seedemu.core import Emulator, Binding, ScionAutonomousSystem, Filter
 from seedemu.layers import ScionBase, EtcHosts, Scion, Ebgp, PeerRelationship, ScionIsd, Ibgp
-from seedemu.layers.Scion import LinkType
+from seedemu.services import ScionSIGService
+
 
 from typing import List, Dict, Union
 
 import time
-from datetime import datetime
-import keyboard
 
 import os
 import json
@@ -18,7 +17,6 @@ import shutil
 from enum import Enum
 
 from python_on_whales import DockerClient
-import docker
 
 
 
@@ -94,6 +92,7 @@ class Client():
     _command: str
     _resolv_ip_command: str = "/usr/bin/getent hosts {hostname}"
     _name: str
+    _args: List[str]
 
     def __init__(self, source_asn: int, dst_isd: int, dst_asn: int, dst_port: int = 50002, src_node_name: str= "traffic_gen", dst_node_name: str= "traffic_gen", log_file: str = "client.log", docker: DockerClient = DockerClient()) -> None:
         self._port = dst_port
@@ -105,29 +104,44 @@ class Client():
         self._dst_isd = dst_isd
         self._docker = docker
         self._dst_ip = ""
+        self._args = []
 
-    def setPort(self, port: int) -> BWTestClient:
+    def appendArgs(self, arg: str, value: str) -> Client:
+        self._args.append(f"-{arg} {value}")
+        return self
+    
+    def getArgs(self) -> List[str]:
+        return self._args
+
+    def setPort(self, port: int) -> Client:
         self._port = port
         return self
 
     def getPort(self) -> int:
         return self._port
 
-    def setLogfile(self, log_file: str) -> BWTestClient:
+    def setLogfile(self, log_file: str) -> Client:
         self._log_file = log_file
         return self
     
     def getLogfile(self) -> str:
         return self._log_file
 
-    def setName(self, name: str) -> Server:
+    def setName(self, name: str) -> Client:
         self._name = name
         return self
     
     def getName(self) -> str:
         return self._name
     
-    def _getDstIP(self, container) -> str:
+    def setDstIP(self, dst_ip: str) -> Client:
+        self._dst_ip = dst_ip
+        return self
+    
+    def getDstIP(self) -> str:
+        return self._dst_ip
+    
+    def getDstIPDynamicially(self, container) -> str:
         dst_hostname = f"{self._dst_asn}-{self._dst_node_name}"
         self._dst_ip = self._docker.execute(container, ["/bin/bash","-c",self._resolv_ip_command.format(hostname=dst_hostname)]).split(" ")[0]
         return self._dst_ip
@@ -147,7 +161,6 @@ iperf3 -s -p {port} --logfile /var/log/traffic_gen/{logfile}\
             self._docker.execute(container, ["/bin/bash","-c",self._command.format(port=self._port, logfile=self._log_file)], detach = True)
         else:
             raise Exception(f"Failed to start IPerfServer on AS{self.asn}. Container not found.")
-
     
 class IPerfClient(Client):
     _bandwidth: str = ""
@@ -159,7 +172,7 @@ class IPerfClient(Client):
         super().__init__(*args, **kwargs)
         self._name = "iperfclient"
         self._command = """\
-iperf3 --logfile /var/log/traffic_gen/{logfile} -c {server_addr} -p {port} {bandwidth} {packet_size} {duration} {transmit_size} \
+iperf3 --logfile /var/log/traffic_gen/{logfile} -c {server_addr} -p {port} {bandwidth} {packet_size} {duration} {transmit_size} {args}\
 """
     def setBandwidth(self, bandwidth: str) -> IPerfClient:
         self._bandwidth = "-b " + bandwidth
@@ -192,14 +205,18 @@ iperf3 --logfile /var/log/traffic_gen/{logfile} -c {server_addr} -p {port} {band
     def start(self) -> None:
         container = getContainerByNameAndAS(self._source_asn, self._src_node_name)
         if container:
-            ip = self._getDstIP(container)
+            if self._dst_ip == "":
+                ip = self.getDstIPDynamicially(container)
+            else:
+                ip = self._dst_ip
             cmd = self._command.format(server_addr=ip, 
                                        port=self._port, 
                                        bandwidth = self._bandwidth, 
                                        packet_size = self._packet_size, 
                                        duration = self._duration, 
                                        transmit_size = self._transmit_size, 
-                                       logfile=self._log_file)
+                                       logfile=self._log_file,
+                                       args=" ".join(self._args))
             self._docker.execute(container, ["/bin/bash","-c",cmd],detach=True)
         else:
             raise Exception(f"Failed to start BWTestClient on AS{self._source_asn}. Container not found.")
@@ -234,7 +251,7 @@ class BWTestClient(Client):
         self._cs_str = ""
         self._sc_str = ""
         self._command = """\
-scion-bwtestclient -s {server_addr}:{port} {SC} {CS} > /var/log/traffic_gen/{logfile} 2>&1 &\
+scion-bwtestclient -s {server_addr}:{port} {SC} {CS} {args} > /var/log/traffic_gen/{logfile} 2>&1 &\
 """
     
     def setCS(self, cs: str) -> BWTestClient:
@@ -257,8 +274,8 @@ scion-bwtestclient -s {server_addr}:{port} {SC} {CS} > /var/log/traffic_gen/{log
         """
         container = getContainerByNameAndAS(self._source_asn, self._src_node_name)
         if container:
-            ip = self._getDstIP(container)
-            cmd = self._command.format(server_addr=f"{self._dst_isd}-{self._dst_asn},{ip}", port=self._port, SC=self._sc_str, CS=self._cs_str, logfile=self._log_file)
+            ip = self.getDstIPDynamicially(container)
+            cmd = self._command.format(server_addr=f"{self._dst_isd}-{self._dst_asn},{ip}", port=self._port, SC=self._sc_str, CS=self._cs_str, logfile=self._log_file, args=" ".join(self._args))
             self._docker.execute(container, ["/bin/bash","-c",cmd], detach = True)
         else:
             raise Exception(f"Failed to start BWTestClient on AS{self._source_asn}. Container not found.")
@@ -266,7 +283,7 @@ scion-bwtestclient -s {server_addr}:{port} {SC} {CS} > /var/log/traffic_gen/{log
 class TrafficMode(Enum):
     BWTESTER = "bwtester"
     IPerf = "iperf"
-    IPerf_SIG = "iperf-sig"
+
 
 class TrafficGenerator():
     _pattern_file: str
@@ -276,8 +293,6 @@ class TrafficGenerator():
     _wait_for_up: int = 15 # TODO: add commandline arg
     _occupied_ports: Dict[int, int]
     _enable_bgp: bool = True
-    _wait_for_down: int = 10
-    _should_zip: bool = False # TODO: add commandline arg
 
 
     def __init__(self, pattern_file: str):
@@ -294,7 +309,7 @@ class TrafficGenerator():
         self._occupied_ports = {}
 
 
-    def _zip_logs(self, log_folder: str = base_dir + "/logs", output_dir: str = "./logs"):  
+    def zip_logs(self, log_folder: str = base_dir + "/logs", output_dir: str = "./logs"):  
         """
         @brief Zip the log files
         """
@@ -346,7 +361,6 @@ class TrafficGenerator():
 
         self._emu.addLayer(ebgp)
         self._emu.addLayer(Ibgp()) # add ibgp to ensure connectivity between all ASes
-
         
     def getTrafficPattern(self) -> List[Dict[str, Union[str, Dict]]]:
         """
@@ -375,15 +389,7 @@ class TrafficGenerator():
         # order the patterns by start_offset
         self._traffic_pattern["traffic_patterns"] = sorted(self._traffic_pattern["traffic_patterns"], key=lambda x: x["start_offset"])
 
-        # determine how long to wait after last pattern was started
-        for pattern in self._traffic_pattern["traffic_patterns"]:
-            if pattern["mode"] == TrafficMode.BWTESTER.value:
-                sc_duration = int(pattern["parameters"]["sc"].split(",")[0]) if "sc" in pattern["parameters"] else 3
-                cs_duration = int(pattern["parameters"]["cs"].split(",")[0]) if "cs" in pattern["parameters"] else 3
-                duration = max(sc_duration, cs_duration)
-            elif pattern["mode"] == TrafficMode.IPerf.value:
-                duration = pattern["parameters"]["duration"] if "duration" in pattern["parameters"] else 10
-            self._wait_for_down = max(self._wait_for_down, duration + 10)
+
         return
 
     def _createLogFolder(self, base_dir: str, asn: int, override: bool=True) -> str:
@@ -405,7 +411,91 @@ class TrafficGenerator():
         
         return base_dir+f"/logs/AS{asn}"
     
-    def Prepare(self, dump_file: str) -> None:
+    def _prepareSIGs(self):
+        """
+        @brief add sigs to traffic_gen nodes that need them
+        """
+        supported_modes = [TrafficMode.IPerf.value]
+
+        sig_patterns = [pattern for pattern in self._traffic_pattern["traffic_patterns"] if (pattern["mode"] in supported_modes and "sig" in pattern and pattern["sig"] == True)]
+
+        if not sig_patterns:
+            return
+        
+        base: ScionBase = self._emu.getLayer("Base")
+
+        sig = ScionSIGService()
+
+        sig_net = "172.16.{network}.0/24"
+        network_index = 1
+        data_port = 30056
+        ctrl_port = 30256
+        probe_port = 30856
+
+        asns = []
+
+        for pattern in sig_patterns:
+            
+            # set up source
+
+            source_asn = int(pattern["source"].split("-")[1])
+            source_as: ScionAutonomousSystem = base.getAutonomousSystem(source_asn)
+            source_node = source_as.getHost("traffic_gen")
+
+
+            source_as.setSigConfig(sig_name=f"sig{network_index}",
+                                   node_name=source_node.getName(),
+                                   other_ia=(int(pattern["destination"].split("-")[0]), int(pattern["destination"].split("-")[1])),
+                                   local_net=sig_net.format(network=network_index), 
+                                   remote_net=sig_net.format(network=network_index+1), 
+                                   ctrl_port=ctrl_port, data_port=data_port, probe_port=probe_port)
+
+            sig.install(f"sig{source_asn}").setConfig(f"sig{network_index}", source_as.getSigConfig(f"sig{network_index}"))
+
+            ctrl_port += 5
+            data_port += 5
+            probe_port += 5
+
+            # set up destination
+            
+            dest_asn = int(pattern["destination"].split("-")[1])
+            dest_as: ScionAutonomousSystem = base.getAutonomousSystem(dest_asn)
+            dest_node = dest_as.getHost("traffic_gen")
+
+
+            dest_as.setSigConfig(sig_name=f"sig{network_index+1}", 
+                                 node_name=dest_node.getName(), 
+                                 other_ia=(int(pattern["source"].split("-")[0]), int(pattern["source"].split("-")[1])),
+                                 local_net=sig_net.format(network=network_index+1), 
+                                 remote_net=sig_net.format(network=network_index), 
+                                 ctrl_port=ctrl_port, data_port=data_port, probe_port=probe_port)
+
+            sig.install(f"sig{dest_asn}").setConfig(f"sig{network_index+1}", dest_as.getSigConfig(f"sig{network_index+1}"))
+            
+
+            # save dst_ip for later
+            pattern["dst_ip"] = sig_net.format(network=network_index+1).replace("0/24", "1")
+
+            network_index += 2
+            ctrl_port += 5
+            data_port += 5
+            probe_port += 5
+
+            asns.extend([int(pattern["source"].split("-")[1]), int(pattern["destination"].split("-")[1])])
+        
+
+        asns = list(set(asns))
+
+        for asn in asns:
+            self._emu.addBinding(Binding(f"sig{asn}", filter=Filter(nodeName="traffic_gen", asn=asn)))        
+
+        self._emu.addLayer(sig)
+
+        return
+
+
+
+    def prepare(self, dump_file: str) -> None:
         """
         @brief Prepare the traffic generator
 
@@ -435,6 +525,7 @@ class TrafficGenerator():
         for asn in ases:
             self._occupied_ports[asn] = 50001 # start from 50002 and increment by 1 for each new server
 
+
         
         # check if ases are already created
         for asn in ases:
@@ -452,6 +543,8 @@ class TrafficGenerator():
             log_folder = self._createLogFolder(base_dir, asn)
             generator_host.addSharedFolder("/var/log/traffic_gen/", log_folder)
     
+        self._prepareSIGs()
+        
         # add bgp
         if self._enable_bgp:
             self._addBGP()
@@ -474,10 +567,16 @@ class TrafficGenerator():
 
         btclient = BWTestClient(source_asn, dst_isd, dest_asn, port, log_file=f"bwtestclient_{str(pattern_id)}.log")
         
-        if "cs" in pattern["parameters"]:
-            btclient.setCS(pattern["parameters"]["cs"])
-        if "sc" in pattern["parameters"]:
-            btclient.setSC(pattern["parameters"]["sc"])
+        if "spezialized_parameters" in pattern:
+            for param in pattern["spezialized_parameters"]:
+                btclient.appendArgs(param, pattern["spezialized_parameters"][param])
+        elif "parameters" in pattern:
+            # assemble cs string
+            cs_str = ""
+            cs_str += f"{pattern['parameters']['duration']}," if "duration" in pattern["parameters"] else "?,"
+            cs_str += f"{pattern['parameters']['packet_size']}," if "packet_size" in pattern["parameters"] else "?,"
+            cs_str += "?,"
+            cs_str += f"{pattern['parameters']['bandwidth']}," if "bandwidth" in pattern["parameters"] else "?"
 
         
         return btserver, btclient
@@ -500,15 +599,20 @@ class TrafficGenerator():
 
         ipclient = IPerfClient(source_asn, dst_isd, dest_asn, port, log_file=f"IperfClient_{str(pattern_id)}.log")
         
-        if "bandwidth" in pattern["parameters"]:
-            ipclient.setBandwidth(pattern["parameters"]["bandwidth"])
-        if "packet_size" in pattern["parameters"]:
-            ipclient.setPacketSize(pattern["parameters"]["packet_size"])
-        if "duration" in pattern["parameters"]:
-            ipclient.setDuration(pattern["parameters"]["duration"])
-        if "transmit_size" in pattern["parameters"]:
-            ipclient.setTransmitSize(pattern["parameters"]["transmit_size"])
-        
+        if "dst_ip" in pattern:
+            ipclient.setDstIP(pattern["dst_ip"])
+
+        if "spezialized_parameters" in pattern:
+            for param in pattern["spezialized_parameters"]:
+                ipclient.appendArgs(param, pattern["spezialized_parameters"][param])
+        elif "parameters" in pattern:
+            if "bandwidth" in pattern["parameters"]:
+                ipclient.setBandwidth(pattern["parameters"]["bandwidth"])
+            if "packet_size" in pattern["parameters"]:
+                ipclient.setPacketSize(pattern["parameters"]["packet_size"])
+            if "duration" in pattern["parameters"]:
+                ipclient.setDuration(pattern["parameters"]["duration"])
+            
         return ipserver, ipclient
         
     def _generate_patterns(self):
@@ -551,43 +655,48 @@ class TrafficGenerator():
 
         print("Traffic Generation Completed\n\n")
 
+    def build(self, output_dir: str = base_dir+"/seed-compiled") -> None:
+        """
+        @brief Build the traffic generator
+        """
+        self._emu.render()
+        self._emu.compile(Docker(internetMapEnabled=True), output_dir, override=True)
+            
+        docker = DockerClient(compose_files=[output_dir+"/docker-compose.yml"])
+
+        docker.compose.build()
+
     def run(self, output_dir: str = base_dir+"/seed-compiled") -> None:
         """
         @brief Run the traffic generator
         """
         
         self._parsePattern()
-
-        self._emu.render()
-        self._emu.compile(Docker(internetMapEnabled=True), output_dir, override=True)
-            
+        
         docker = DockerClient(compose_files=[output_dir+"/docker-compose.yml"])
 
-        # docker.compose.build()
+       
         docker.compose.up(detach=True)  
 
         
         print(f"\n\n\nWaiting {self._wait_for_up} seconds for Containers to be ready\n\n\n")
         time.sleep(self._wait_for_up)   
 
-
         self._generate_patterns()
 
-        print(f"Waiting for {self._wait_for_down} seconds for traffic generation to finish")
-        time.sleep(self._wait_for_down)
+    def stop(self) -> None:
+        """
+        @brief Stop the traffic generator
+        """
 
-
+        zipped_logs_path = self.zip_logs()
+        print(f"Logs zipped to {zipped_logs_path}")
+        docker = DockerClient(compose_files=[base_dir+"/seed-compiled/docker-compose.yml"])
         docker.compose.down()
-
-        if(self._should_zip):
-            print("Zipping Logs")
-            self._zip_logs()
-
-
-
 
 
 if __name__ == "__main__":
     tg = TrafficGenerator(base_dir+"/pattern_sample.json")
-    tg.Prepare(base_dir+"/scion-seed.bin")
+    tg.prepare(base_dir+"/scion-seed.bin")
+    #tg.build()
     tg.run()
