@@ -4,11 +4,13 @@ import json
 import os
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
+TRAFFIC_MATRIX_FILE = base_dir+"/TrafficMatrix.csv"
+PATTERN_FILE = base_dir+"/pattern_matrix.json"
 
 class TrafficMatrix():
 
     _matrix = []
-    _timeStepSeconds : int
+    _timeStepSeconds : int = 10
 
     def __init__(self) -> None:
         pass
@@ -30,33 +32,63 @@ class TrafficMatrix():
         return self
 
     def toPattern(self):
-        patterns = []
+        matrix_start_idx = 4
+        source_dest_pair = []
         for row in self._matrix:
+            if row[0] == "": # empty source means row refers to previous source
+                parameter = row[3]
+                source_dest_pair[-1]["parameters"][parameter] = row[matrix_start_idx:]
+                continue
             source_isd = row[0].split("-")[0]
             source_as = row[0].split("-")[1]
             destination_isd = row[1].split("-")[0]
             destination_as = row[1].split("-")[1]
             mode = row[2]
+            parameter = row[3]
 
-            matrix_start_idx = 3
 
-            for i in range(matrix_start_idx, len(row)):
-                start_offset = f"{(i-matrix_start_idx) * self._timeStepSeconds}s"
-                patterns.append({
-                    "start_offset": start_offset,
-                    "source": f"{source_isd}-{source_as}",
+            source_dest_pair.append(
+                {
+                    "source":  f"{source_isd}-{source_as}",
                     "destination": f"{destination_isd}-{destination_as}",
                     "mode": mode,
                     "parameters": {
-                        "bandwidth": row[i]
+                        parameter: row[matrix_start_idx:]
+                    }
+                }
+            )
+
+        patterns = []
+        for pattern in source_dest_pair:
+            stop_idx = max([len(v) for v in pattern["parameters"].values()])
+            for i in range(0, stop_idx):
+                start_offset = f"{i * self._timeStepSeconds}s"
+                patterns.append({
+                    "start_offset": start_offset,
+                    "source": pattern["source"],
+                    "destination": pattern["destination"],
+                    "mode": pattern["mode"],
+                    "parameters": {
+                        k: v[i] for k, v in pattern["parameters"].items() if i < len(v)
                     }
                 })
+        # set timestep
+        for p in patterns:
+            if "duration" not in p["parameters"]:
+                p["parameters"]["duration"] = self._timeStepSeconds
+
         return patterns
+
+    def export(self, file_path: str):
+        patterns = self.toPattern()
+        with open(file_path, 'w') as file:
+            json.dump(patterns, file, indent=4)
 
 
 
 
 if __name__ == "__main__":
     tm = TrafficMatrix()
-    pattern = tm.fromFile(base_dir+"/TrafficMatrix.csv").setTimeStep("10s").toPattern()
-    print(json.dumps(pattern, indent=2))
+    pattern = tm.fromFile(TRAFFIC_MATRIX_FILE).setTimeStep("10s").export(PATTERN_FILE)
+
+    

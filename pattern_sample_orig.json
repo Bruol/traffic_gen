@@ -1,0 +1,92 @@
+{
+    "traffic_patterns": [
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "specialized_parameters": {
+          "cs": "10,?,?,1Mbps",
+          "sc": "10,?,?,0.5Mbps"
+        }
+      },    
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "web"
+      },    
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "bwtester",
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "iperf",
+        "sig": false,
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "bwtester",
+        "parameters": {
+          "duration": 10,
+          "bandwidth": "1Mbps"
+        }
+      },   
+      {
+        "start_offset": "0m",
+        "source": "1-110",
+        "destination": "1-111",
+        "mode": "iperf",
+        "sig": false,
+        "spezialized_parameters": {
+            "u": "",
+            "t": "10"
+        }
+      }
+    ]
+  }

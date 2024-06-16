@@ -12,6 +12,8 @@ import time
 import os
 import json
 import shutil
+import signal
+from functools import partial
 
 
 from enum import Enum
@@ -20,7 +22,17 @@ from python_on_whales import DockerClient
 
 
 
+
 base_dir = os.path.dirname(os.path.realpath(__file__))
+
+
+
+def handler( tg: TrafficGenerator = None, *args):
+    print("\n\nYou pressed Ctrl+C - stopping emulation")
+    if tg:
+        tg.stop()
+    exit(0)
+
 
 
 
@@ -280,9 +292,51 @@ scion-bwtestclient -s {server_addr}:{port} {SC} {CS} {args} > /var/log/traffic_g
         else:
             raise Exception(f"Failed to start BWTestClient on AS{self._source_asn}. Container not found.")
 
+class WebServer(Server):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._name = "webserver"
+        self._command = """\
+sed -i 's/\ERROR_LOG/{error_log}/g' /etc/nginx/nginx.conf && sed -i 's/\ACCESS_LOG/{access_log})/g' /etc/nginx/nginx.conf && nginx -c /etc/nginx/nginx.conf\
+"""
+
+    def start(self) -> None:
+        container = getContainerByNameAndAS(self._asn, self._nodeName)
+        if container:
+            cmd = self._command.format(access_log=f"access_{self._log_file}", error_log=f"error_{self._log_file}")
+            self._docker.execute(container, ["/bin/bash","-c",cmd], detach = True)
+        else:
+            raise Exception(f"Failed to start WebServer on AS{self.asn}. Container not found.")
+
+class WebClient(Client):
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._name = "webclient"
+        self._command = """\
+wget -O /dev/null -o /var/log/traffic_gen/{logfile} --spider --recursive {server_addr} 2>&1 &\
+"""
+
+    def start(self) -> None:
+        container = getContainerByNameAndAS(self._source_asn, self._src_node_name)
+        if container:
+            if self._dst_ip == "":
+                ip = self.getDstIPDynamicially(container)
+            else:
+                ip = self._dst_ip
+            cmd = self._command.format(server_addr=ip, 
+                                       logfile=self._log_file,
+                                       args=" ".join(self._args))
+            self._docker.execute(container, ["/bin/bash","-c",cmd],detach=True)
+        else:
+            raise Exception(f"Failed to start BWTestClient on AS{self._source_asn}. Container not found.")
+
+
 class TrafficMode(Enum):
     BWTESTER = "bwtester"
     IPerf = "iperf"
+    web = "web"
 
 
 class TrafficGenerator():
@@ -302,7 +356,7 @@ class TrafficGenerator():
         with open(self._pattern_file, 'r') as f:
             self._traffic_pattern = json.load(f)
         
-        self._defaultSoftware = ["iperf3", "net-tools"]
+        self._defaultSoftware = ["iperf3", "net-tools", "python3"]
 
         self._emu = Emulator()
 
@@ -452,10 +506,6 @@ class TrafficGenerator():
 
             sig.install(f"sig{source_asn}").setConfig(f"sig{network_index}", source_as.getSigConfig(f"sig{network_index}"))
 
-            ctrl_port += 5
-            data_port += 5
-            probe_port += 5
-
             # set up destination
             
             dest_asn = int(pattern["destination"].split("-")[1])
@@ -492,6 +542,109 @@ class TrafficGenerator():
         self._emu.addLayer(sig)
 
         return
+
+    def _cloneWebPages(self,webpages: List[str]) -> None:
+        """
+        @brief Clone the web pages
+        """
+
+        index_template = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Links Landing</title>
+</head>
+<body>
+    <h1>Links to Subdirectory</h1>
+{links}
+</body>
+</html>
+
+"""
+
+        link_template = '<p><a href="{link}">{title}</a></p>\n'
+        
+
+        directoryPrefix = base_dir+"/webpages"
+        dirs = os.listdir(directoryPrefix)
+
+        for webpage in webpages:
+            if not webpage in dirs:
+                os.system(f"wget --mirror --convert-links --adjust-extension --page-requisites --user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0' --directory-prefix={directoryPrefix} --no-parent {webpage}")
+
+
+        links = ""
+
+        for dir in dirs:
+            link = link_template.format(link=f"{dir}/index.html", title=dir)
+            links += link
+
+        index = index_template.format(links=links)
+
+        with open(directoryPrefix+"/index.html", 'w') as f:
+            f.write(index)      
+
+    def _prepareWEB(self):
+        """
+        @brief Prepare the web server
+        """
+
+        nginx_conf = """\
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+events {
+        worker_connections 768;  
+}
+http {
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3; 
+        ssl_prefer_server_ciphers on;
+        access_log /var/log/traffic_gen/ACCESS_LOG;
+        error_log /var/log/traffic_gen/ERROR_LOG;
+        gzip on;
+        include /etc/nginx/conf.d/*.conf;
+        include /etc/nginx/sites-enabled/*;
+}
+"""
+
+        base: ScionBase = self._emu.getLayer("Base")
+
+        self._cloneWebPages(["google.com","facebook.com","youtube.com"])
+        web_patterns = [pattern for pattern in self._traffic_pattern["traffic_patterns"] if pattern["mode"] == TrafficMode.web.value]
+
+        if not web_patterns:
+            return
+        
+        server_asns = [pattern["destination"].split("-")[1] for pattern in web_patterns]
+        client_asns = [pattern["source"].split("-")[1] for pattern in web_patterns]
+
+        for asn in server_asns:
+            as_ = base.getAutonomousSystem(int(asn))
+            net_name = "net0"
+            host = as_.getHost("traffic_gen")
+            host.addSoftware("nginx-light")
+            host.addSoftware("wget")
+            host.addSharedFolder("/var/www/html", base_dir+"/webpages")
+            host.setFile("/etc/nginx/nginx.conf", nginx_conf)
+
+        for asn in client_asns:
+            as_ = base.getAutonomousSystem(int(asn))
+            net_name = "net0"
+            host = as_.getHost("traffic_gen")
+            host.addSoftware("wget")
+            host.addSoftware("curl")
+
+
 
 
 
@@ -543,11 +696,14 @@ class TrafficGenerator():
             log_folder = self._createLogFolder(base_dir, asn)
             generator_host.addSharedFolder("/var/log/traffic_gen/", log_folder)
     
+        self._prepareWEB()
+        
         self._prepareSIGs()
         
         # add bgp
         if self._enable_bgp:
             self._addBGP()
+        
 
     def _setUpBWTester(self, pattern: Dict[str, Union[str, Dict]], pattern_id: int) -> tuple[BWTestServer, BWTestClient]:
         """
@@ -567,16 +723,17 @@ class TrafficGenerator():
 
         btclient = BWTestClient(source_asn, dst_isd, dest_asn, port, log_file=f"bwtestclient_{str(pattern_id)}.log")
         
-        if "spezialized_parameters" in pattern:
-            for param in pattern["spezialized_parameters"]:
-                btclient.appendArgs(param, pattern["spezialized_parameters"][param])
+        if "specialized_parameters" in pattern:
+            for param in pattern["specialized_parameters"]:
+                btclient.appendArgs(param, pattern["specialized_parameters"][param])
         elif "parameters" in pattern:
             # assemble cs string
             cs_str = ""
             cs_str += f"{pattern['parameters']['duration']}," if "duration" in pattern["parameters"] else "?,"
             cs_str += f"{pattern['parameters']['packet_size']}," if "packet_size" in pattern["parameters"] else "?,"
             cs_str += "?,"
-            cs_str += f"{pattern['parameters']['bandwidth']}," if "bandwidth" in pattern["parameters"] else "?"
+            cs_str += f"{pattern['parameters']['bandwidth']}" if "bandwidth" in pattern["parameters"] else "?"
+            btclient.setCS(cs_str)
 
         
         return btserver, btclient
@@ -602,9 +759,9 @@ class TrafficGenerator():
         if "dst_ip" in pattern:
             ipclient.setDstIP(pattern["dst_ip"])
 
-        if "spezialized_parameters" in pattern:
-            for param in pattern["spezialized_parameters"]:
-                ipclient.appendArgs(param, pattern["spezialized_parameters"][param])
+        if "specialized_parameters" in pattern:
+            for param in pattern["specialized_parameters"]:
+                ipclient.appendArgs(param, pattern["specialized_parameters"][param])
         elif "parameters" in pattern:
             if "bandwidth" in pattern["parameters"]:
                 ipclient.setBandwidth(pattern["parameters"]["bandwidth"])
@@ -614,6 +771,28 @@ class TrafficGenerator():
                 ipclient.setDuration(pattern["parameters"]["duration"])
             
         return ipserver, ipclient
+    
+    def _setUpWeb(self, pattern: Dict[str, Union[str, Dict]], pattern_id: int) -> tuple[WebServer, WebClient]:
+        """
+        @brief Set up the Web
+        """
+
+        dest_asn = int(pattern["destination"].split("-")[1])
+
+
+        webserver = WebServer(dest_asn, log_file=f"webserver_{str(pattern_id)}.log")
+     
+
+        source_asn = int(pattern["source"].split("-")[1])
+        dst_isd = int(pattern["destination"].split("-")[0])
+
+        webclient = WebClient(source_asn, dst_isd, dest_asn, log_file=f"webclient_{str(pattern_id)}.log")
+
+        if "specialized_parameters" in pattern:
+            for param in pattern["specialized_parameters"]:
+                webclient.appendArgs(param, pattern["specialized_parameters"][param])
+    
+        return webserver, webclient
         
     def _generate_patterns(self):
 
@@ -646,8 +825,15 @@ class TrafficGenerator():
 
                 ipserver.start()
                 ipclient.start()
-            elif pattern["mode"] == TrafficMode.IPerf_SIG.value:
-                pass
+
+            elif pattern["mode"] == TrafficMode.web.value:
+                print(f"generating WEB traffic from AS{pattern['source']} to AS{pattern['destination']}")
+
+                webserver, webclient = self._setUpWeb(pattern, pattern_id)
+
+                webserver.start()
+                webclient.start()
+
             else:
                 raise Exception(f"Invalid mode {pattern['mode']}")
 
@@ -697,6 +883,10 @@ class TrafficGenerator():
 
 if __name__ == "__main__":
     tg = TrafficGenerator(base_dir+"/pattern_sample.json")
+    signal.signal(signal.SIGINT, partial(handler, tg))
     tg.prepare(base_dir+"/scion-seed.bin")
     #tg.build()
     tg.run()
+    print("press CTRL+C to stop emulation\n\n\n")
+    while True:
+        pass

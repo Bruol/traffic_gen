@@ -1,4 +1,5 @@
-Source IA,Destination IA,mode,,,
-1-110,1-112,bwtester,1Mbps,0.5Mbps,10Mbps
-1-110,1-111,iperf,1Mbps,1Mbps,1Mbps
-1-111,1-112,iperf,1Mbps,1Mbps,1Mbps
+Source IA,Destination IA,mode,parameter,,,
+1-110,1-112,bwtester,bandwidth,1Mbps,0.5Mbps,10Mbps,10Mbps
+,,,packet_size,8000,128000,128000
+1-110,1-111,iperf,bandwidth,1Mbps,1Mbps,1Mbps
+1-111,1-112,iperf,bandwidth,1Mbps,1Mbps,1Mbps

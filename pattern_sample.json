@@ -6,59 +6,18 @@
         "destination": "1-112",
         "mode": "bwtester",
         "specialized_parameters": {
-          "cs": "10,?,?,1Mbps",
+          "cs": "10,?,?,10Mbps",
           "sc": "10,?,?,0.5Mbps"
         }
       },    
       {
-        "start_offset": "0m",
+        "start_offset": "10s",
         "source": "1-110",
         "destination": "1-112",
         "mode": "bwtester",
         "parameters": {
-          "duration": 10,
-          "bandwidth": "1Mbps"
-        }
-      },
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-112",
-        "mode": "bwtester",
-        "parameters": {
-          "duration": 10,
-          "bandwidth": "1Mbps"
-        }
-      },
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-112",
-        "mode": "bwtester",
-        "parameters": {
-          "duration": 10,
-          "bandwidth": "1Mbps"
-        }
-      },
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-112",
-        "mode": "bwtester",
-        "parameters": {
-          "duration": 10,
-          "bandwidth": "1Mbps"
-        }
-      },
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-112",
-        "mode": "iperf",
-        "sig": true,
-        "parameters": {
-          "duration": 10,
-          "bandwidth": "1Mbps"
+          "duration": 30,
+          "bandwidth": "10Mbps"
         }
       },
       {
@@ -69,17 +28,6 @@
         "parameters": {
           "duration": 10,
           "bandwidth": "1Mbps"
-        }
-      },   
-      {
-        "start_offset": "0m",
-        "source": "1-110",
-        "destination": "1-111",
-        "mode": "iperf",
-        "sig": true,
-        "spezialized_parameters": {
-            "u": "",
-            "t": "10"
         }
       }
     ]
