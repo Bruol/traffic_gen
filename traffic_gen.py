@@ -298,7 +298,7 @@ class WebServer(Server):
         super().__init__(*args, **kwargs)
         self._name = "webserver"
         self._command = """\
-sed -i 's/\ERROR_LOG/{error_log}/g' /etc/nginx/nginx.conf && sed -i 's/\ACCESS_LOG/{access_log})/g' /etc/nginx/nginx.conf && nginx -c /etc/nginx/nginx.conf\
+sed -i 's/\ERROR_LOG/{error_log}/g' /etc/nginx/nginx.conf && sed -i 's/\ACCESS_LOG/{access_log}/g' /etc/nginx/nginx.conf && nginx -c /etc/nginx/nginx.conf\
 """
 
     def start(self) -> None:
@@ -310,13 +310,24 @@ sed -i 's/\ERROR_LOG/{error_log}/g' /etc/nginx/nginx.conf && sed -i 's/\ACCESS_L
             raise Exception(f"Failed to start WebServer on AS{self.asn}. Container not found.")
 
 class WebClient(Client):
-    
+    _duration: int
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._name = "webclient"
         self._command = """\
-wget -O /dev/null -o /var/log/traffic_gen/{logfile} --spider --recursive {server_addr} 2>&1 &\
+python3 /app/web_client.py --url http://{server_addr} --duration {duration} --logfile /var/log/traffic_gen/{logfile} {args}\
 """
+# wget -O /dev/null -o /var/log/traffic_gen/{logfile} --spider --recursive {server_addr} 2>&1 &\
+        self._duration = 60
+
+    def setDuration(self, duration: int) -> WebClient:
+        self._duration = duration
+        return self
+    
+    def getDuration(self) -> int:
+        return self._duration
+
 
     def start(self) -> None:
         container = getContainerByNameAndAS(self._source_asn, self._src_node_name)
@@ -326,13 +337,15 @@ wget -O /dev/null -o /var/log/traffic_gen/{logfile} --spider --recursive {server
             else:
                 ip = self._dst_ip
             cmd = self._command.format(server_addr=ip, 
+                                       duration=self._duration,
                                        logfile=self._log_file,
                                        args=" ".join(self._args))
-            self._docker.execute(container, ["/bin/bash","-c",cmd],detach=True)
+            res = self._docker.execute(container, ["/bin/bash","-c",cmd],detach=True)
         else:
-            raise Exception(f"Failed to start BWTestClient on AS{self._source_asn}. Container not found.")
+            raise Exception(f"Failed to start WEB Client on AS{self._source_asn}. Container not found.")
 
-
+        return 
+    
 class TrafficMode(Enum):
     BWTESTER = "bwtester"
     IPerf = "iperf"
@@ -342,11 +355,12 @@ class TrafficMode(Enum):
 class TrafficGenerator():
     _pattern_file: str
     _traffic_pattern: List[Dict[str, Union[str, Dict]]]
-    _defaultSoftware: List[str]
+    _defaultSoftware: List[str] 
     _emu: Emulator
-    _wait_for_up: int = 15 # TODO: add commandline arg
+    _wait_for_up: int = 5 # TODO: add commandline arg
     _occupied_ports: Dict[int, int]
     _enable_bgp: bool = True
+    _custom_webpages: bool = False # TODO: add cmdline arg
 
 
     def __init__(self, pattern_file: str):
@@ -356,7 +370,7 @@ class TrafficGenerator():
         with open(self._pattern_file, 'r') as f:
             self._traffic_pattern = json.load(f)
         
-        self._defaultSoftware = ["iperf3", "net-tools", "python3"]
+        self._defaultSoftware = ["iperf3", "net-tools", "python3", "python3-pip"]
 
         self._emu = Emulator()
 
@@ -572,9 +586,10 @@ class TrafficGenerator():
 
         for webpage in webpages:
             if not webpage in dirs:
-                os.system(f"wget --mirror --convert-links --adjust-extension --page-requisites --user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0' --directory-prefix={directoryPrefix} --no-parent {webpage}")
+                os.system(f"wget --tries=2 --convert-links --adjust-extension --user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0' --no-parent -P {directoryPrefix}/{webpage} {webpage}")
 
 
+        dirs = os.listdir(directoryPrefix)
         links = ""
 
         for dir in dirs:
@@ -619,7 +634,14 @@ http {
 
         base: ScionBase = self._emu.getLayer("Base")
 
-        self._cloneWebPages(["google.com","facebook.com","youtube.com"])
+        if(not self._custom_webpages):
+            if not os.path.exists(base_dir+"/webpages.txt"):
+                raise ("webpages.txt not found please provide a file with a list of webpages to clone. Or set custom_webpages cmdline arg")
+            with open(base_dir + "/webpages.txt", "r") as f:
+                webpages = f.readlines()
+                webpages = [webpage.strip() for webpage in webpages]
+
+        self._cloneWebPages(webpages)
         web_patterns = [pattern for pattern in self._traffic_pattern["traffic_patterns"] if pattern["mode"] == TrafficMode.web.value]
 
         if not web_patterns:
@@ -641,11 +663,10 @@ http {
             as_ = base.getAutonomousSystem(int(asn))
             net_name = "net0"
             host = as_.getHost("traffic_gen")
+            host.addSharedFolder("/app", base_dir+"/web_client")
             host.addSoftware("wget")
             host.addSoftware("curl")
-
-
-
+            host.addBuildCommand("pip install bs4 requests argparse")
 
 
     def prepare(self, dump_file: str) -> None:
@@ -786,11 +807,15 @@ http {
         source_asn = int(pattern["source"].split("-")[1])
         dst_isd = int(pattern["destination"].split("-")[0])
 
+
         webclient = WebClient(source_asn, dst_isd, dest_asn, log_file=f"webclient_{str(pattern_id)}.log")
 
         if "specialized_parameters" in pattern:
             for param in pattern["specialized_parameters"]:
                 webclient.appendArgs(param, pattern["specialized_parameters"][param])
+        elif "parameters" in pattern:
+            if "duration" in pattern["parameters"]:
+                webclient.setDuration(pattern["parameters"]["duration"])
     
         return webserver, webclient
         
@@ -884,8 +909,8 @@ http {
 if __name__ == "__main__":
     tg = TrafficGenerator(base_dir+"/pattern_sample.json")
     signal.signal(signal.SIGINT, partial(handler, tg))
-    tg.prepare(base_dir+"/scion-seed.bin")
-    #tg.build()
+    tg.prepare(base_dir+"/scion-seed.bin") # TODO: add commandline arg
+    #tg.build() # TODO: add commandline arg
     tg.run()
     print("press CTRL+C to stop emulation\n\n\n")
     while True:

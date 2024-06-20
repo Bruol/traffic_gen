@@ -7,7 +7,7 @@
         "mode": "bwtester",
         "specialized_parameters": {
           "cs": "10,?,?,10Mbps",
-          "sc": "10,?,?,0.5Mbps"
+          "sc": "10,?,?,500kbps"
         }
       },    
       {
@@ -18,6 +18,15 @@
         "parameters": {
           "duration": 30,
           "bandwidth": "10Mbps"
+        }
+      },
+      {
+        "start_offset": "0s",
+        "source": "1-110",
+        "destination": "1-112",
+        "mode": "web",
+        "parameters": {
+          "duration": 30
         }
       },
       {
