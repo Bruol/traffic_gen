@@ -35,14 +35,17 @@ def main(url, duration, wait_time):
     
     start_time = time.time()
 
+    print(f"Starting web client at {start_time} seconds.")
+
     i = 0
     
     while (time.time() - start_time) < duration:
         link = links[i % len(links)]
-        print(f"Requesting {link}")
+        print(f"Requesting {link} at {time.time() - start_time} seconds.", end=" -- ")
         response = requests.get(link)
-        print(f"Status code: {response.status_code}")
+        print(f"Status code: {response.status_code}", end=" -- ")
         i += 1
+        print(f"Waiting for {wait_time} seconds.")
         time.sleep(wait_time)
 
 if __name__ == '__main__':
@@ -52,11 +55,13 @@ if __name__ == '__main__':
     parser.add_argument('--url', type=str, help='URL')
     parser.add_argument('--duration', type=int, help='duration')
     parser.add_argument('--wait_time', type=float, default=0, help='wait time')
-    parser.add_argument('--logfile', type=str, help='log file')
+    parser.add_argument('--logfile', type=str, default="", help='log file')
 
     args = parser.parse_args()
+    if args.logfile: 
+        with open(args.logfile, 'w') as f:
+            sys.stdout = f
 
-    with open(args.logfile, 'w') as f:
-        sys.stdout = f
-
+            main(args.url, args.duration, wait_time=args.wait_time)
+    else:
         main(args.url, args.duration, wait_time=args.wait_time)

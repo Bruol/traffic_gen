@@ -15,26 +15,25 @@ import shutil
 import signal
 from functools import partial
 
+import argparse
 
 from enum import Enum
 
 from python_on_whales import DockerClient
 
+from traffic_matrix import TrafficMatrix
 
 
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 
 
-
+# this handles pressing ctrl+c
 def handler( tg: TrafficGenerator = None, *args):
     print("\n\nYou pressed Ctrl+C - stopping emulation")
     if tg:
         tg.stop()
     exit(0)
-
-
-
 
 def getContainerByNameAndAS(asn: int, name: str) -> str:
     """
@@ -328,7 +327,6 @@ python3 /app/web_client.py --url http://{server_addr} --duration {duration} --lo
     def getDuration(self) -> int:
         return self._duration
 
-
     def start(self) -> None:
         container = getContainerByNameAndAS(self._source_asn, self._src_node_name)
         if container:
@@ -351,19 +349,19 @@ class TrafficMode(Enum):
     IPerf = "iperf"
     web = "web"
 
-
 class TrafficGenerator():
     _pattern_file: str
     _traffic_pattern: List[Dict[str, Union[str, Dict]]]
     _defaultSoftware: List[str] 
     _emu: Emulator
-    _wait_for_up: int = 5 # TODO: add commandline arg
+    _wait_for_up: int
     _occupied_ports: Dict[int, int]
-    _enable_bgp: bool = True
+    _enable_bgp: bool = True # TODO: disable this if no ipv4 applications in pattern
     _custom_webpages: bool = False # TODO: add cmdline arg
+    _logDir: str
+    _seedCompileDir: str
 
-
-    def __init__(self, pattern_file: str):
+    def __init__(self, pattern_file: str, wait_for_up: int, logDir: str, seedCompileDir: str):
         
         self._pattern_file = pattern_file
 
@@ -376,15 +374,19 @@ class TrafficGenerator():
 
         self._occupied_ports = {}
 
+        self._wait_for_up = wait_for_up
 
-    def zip_logs(self, log_folder: str = base_dir + "/logs", output_dir: str = "./logs"):  
+        self._logDir = logDir
+
+        self._seedCompileDir = seedCompileDir
+
+    def zip_logs(self, output_dir: str = "./logs"):  
         """
         @brief Zip the log files
         """
-        shutil.make_archive(output_dir, 'zip', log_folder)
+        shutil.make_archive(output_dir, 'zip', self._logDir)
         return output_dir+".zip"
 
-    
     def _addBGP(self):
         """
         @brief get scion routes and translate them to equivalent bgp routes
@@ -417,15 +419,29 @@ class TrafficGenerator():
             link_type = str(link[4])
             if link_type == "Transit":
                 bgp_type = PeerRelationship.Provider
+                
             elif link_type == "Peering":
                 bgp_type = PeerRelationship.Peer
-            else: # handle CORE peering
-                bgp_type = PeerRelationship.Peer
-                # add bgp router as a Provider to all CORE ASes to ensure connectivity
-                ebgp.addPrivatePeering(bgp_router_asn, a_asn, PeerRelationship.Provider)
-                ebgp.addPrivatePeering(bgp_router_asn, b_asn, PeerRelationship.Provider)
-            
+            else: # handle core links later
+                continue
+
+            peerings = ebgp.getCrossConnectPeerings()
+            if (b_asn,a_asn) in peerings or (a_asn,b_asn) in peerings: # if we have already added this link as a peer, skip
+                continue
+
             ebgp.addCrossConnectPeering(a_asn, b_asn, bgp_type)
+
+        # Handle Core links
+        for asn in base.getAsns():
+            # get isds for AS
+            isds = scion_isd.getAsIsds(asn)
+            # is AS core in any ISD
+            core = [ iscore for (_,iscore) in isds]
+            # if so add ebgp to bgp_router
+            if (not asn == bgp_router_asn) and (True in core):
+                as_ = base.getAutonomousSystem(asn)
+                as_.createRouter(f'bgp_router_{asn}').joinNetwork('net0').joinNetwork('ix100')
+                ebgp.addPrivatePeering(100, bgp_router_asn, asn, PeerRelationship.Provider)   
 
         self._emu.addLayer(ebgp)
         self._emu.addLayer(Ibgp()) # add ibgp to ensure connectivity between all ASes
@@ -460,24 +476,24 @@ class TrafficGenerator():
 
         return
 
-    def _createLogFolder(self, base_dir: str, asn: int, override: bool=True) -> str:
+    def _createLogFolder(self, asn: int, override: bool=True) -> str:
         """
         @brief Create the log folder
         """
 
-        if not os.path.exists(base_dir+"/logs"):
-            os.makedirs(base_dir+"/logs")
+        if not os.path.exists(self._logDir):
+            os.makedirs(self._logDir)
         
-        if not os.path.exists(base_dir+f"/logs/AS{asn}"):
-            os.makedirs(base_dir+f"/logs/AS{asn}")
+        if not os.path.exists(self._logDir + f"/AS{asn}"):
+            os.makedirs(self._logDir+f"/AS{asn}")
         else:
             if not override:
                 raise Exception(f"Log folder for AS{asn} already exists.")
             else:
-                os.system(f"rm -rf {base_dir}/logs/AS{asn}")
-                os.makedirs(base_dir+f"/logs/AS{asn}")
+                os.system(f"rm -rf {self._logDir}/AS{asn}")
+                os.makedirs(self._logDir+f"/AS{asn}")
         
-        return base_dir+f"/logs/AS{asn}"
+        return self._logDir+f"/AS{asn}"
     
     def _prepareSIGs(self):
         """
@@ -496,9 +512,6 @@ class TrafficGenerator():
 
         sig_net = "172.16.{network}.0/24"
         network_index = 1
-        data_port = 30056
-        ctrl_port = 30256
-        probe_port = 30856
 
         asns = []
 
@@ -508,50 +521,41 @@ class TrafficGenerator():
 
             source_asn = int(pattern["source"].split("-")[1])
             source_as: ScionAutonomousSystem = base.getAutonomousSystem(source_asn)
-            source_node = source_as.getHost("traffic_gen")
+            source_node = source_as.createHost(f"sig{network_index}").joinNetwork("net0")
 
 
             source_as.setSigConfig(sig_name=f"sig{network_index}",
                                    node_name=source_node.getName(),
                                    other_ia=(int(pattern["destination"].split("-")[0]), int(pattern["destination"].split("-")[1])),
                                    local_net=sig_net.format(network=network_index), 
-                                   remote_net=sig_net.format(network=network_index+1), 
-                                   ctrl_port=ctrl_port, data_port=data_port, probe_port=probe_port)
+                                   remote_net=sig_net.format(network=network_index+1))
 
-            sig.install(f"sig{source_asn}").setConfig(f"sig{network_index}", source_as.getSigConfig(f"sig{network_index}"))
+            sig.install(f"sig{network_index}").setConfig(f"sig{network_index}", source_as.getSigConfig(f"sig{network_index}"))
+
+            self._emu.addBinding(Binding(f"sig{network_index}", filter=Filter(nodeName=f"sig{network_index}", asn=source_asn)))
+
 
             # set up destination
             
             dest_asn = int(pattern["destination"].split("-")[1])
             dest_as: ScionAutonomousSystem = base.getAutonomousSystem(dest_asn)
-            dest_node = dest_as.getHost("traffic_gen")
+            dest_node = dest_as.createHost(f"sig{network_index+1}").joinNetwork("net0")
 
 
             dest_as.setSigConfig(sig_name=f"sig{network_index+1}", 
                                  node_name=dest_node.getName(), 
                                  other_ia=(int(pattern["source"].split("-")[0]), int(pattern["source"].split("-")[1])),
                                  local_net=sig_net.format(network=network_index+1), 
-                                 remote_net=sig_net.format(network=network_index), 
-                                 ctrl_port=ctrl_port, data_port=data_port, probe_port=probe_port)
+                                 remote_net=sig_net.format(network=network_index))
 
-            sig.install(f"sig{dest_asn}").setConfig(f"sig{network_index+1}", dest_as.getSigConfig(f"sig{network_index+1}"))
+            sig.install(f"sig{network_index+1}").setConfig(f"sig{network_index+1}", dest_as.getSigConfig(f"sig{network_index+1}"))
             
+            self._emu.addBinding(Binding(f"sig{network_index+1}", filter=Filter(nodeName=f"sig{network_index+1}", asn=dest_asn)))
 
             # save dst_ip for later
             pattern["dst_ip"] = sig_net.format(network=network_index+1).replace("0/24", "1")
 
             network_index += 2
-            ctrl_port += 5
-            data_port += 5
-            probe_port += 5
-
-            asns.extend([int(pattern["source"].split("-")[1]), int(pattern["destination"].split("-")[1])])
-        
-
-        asns = list(set(asns))
-
-        for asn in asns:
-            self._emu.addBinding(Binding(f"sig{asn}", filter=Filter(nodeName="traffic_gen", asn=asn)))        
 
         self._emu.addLayer(sig)
 
@@ -582,8 +586,13 @@ class TrafficGenerator():
         
 
         directoryPrefix = base_dir+"/webpages"
+        if not os.path.exists(directoryPrefix):
+            os.makedirs(directoryPrefix)
+            
         dirs = os.listdir(directoryPrefix)
 
+        print(f"Cloning webpages to {directoryPrefix} \n\n\n")
+        
         for webpage in webpages:
             if not webpage in dirs:
                 os.system(f"wget --tries=2 --convert-links --adjust-extension --user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0' --no-parent -P {directoryPrefix}/{webpage} {webpage}")
@@ -668,7 +677,6 @@ http {
             host.addSoftware("curl")
             host.addBuildCommand("pip install bs4 requests argparse")
 
-
     def prepare(self, dump_file: str) -> None:
         """
         @brief Prepare the traffic generator
@@ -714,7 +722,7 @@ http {
             # install software
             [generator_host.addSoftware(software) for software in self._defaultSoftware]
             # set log dirs
-            log_folder = self._createLogFolder(base_dir, asn)
+            log_folder = self._createLogFolder(asn)
             generator_host.addSharedFolder("/var/log/traffic_gen/", log_folder)
     
         self._prepareWEB()
@@ -723,8 +731,7 @@ http {
         
         # add bgp
         if self._enable_bgp:
-            self._addBGP()
-        
+            self._addBGP()        
 
     def _setUpBWTester(self, pattern: Dict[str, Union[str, Dict]], pattern_id: int) -> tuple[BWTestServer, BWTestClient]:
         """
@@ -866,10 +873,13 @@ http {
 
         print("Traffic Generation Completed\n\n")
 
-    def build(self, output_dir: str = base_dir+"/seed-compiled") -> None:
+    def build(self) -> None:
         """
         @brief Build the traffic generator
         """
+
+        output_dir = self._seedCompileDir
+
         self._emu.render()
         self._emu.compile(Docker(internetMapEnabled=True), output_dir, override=True)
             
@@ -877,11 +887,13 @@ http {
 
         docker.compose.build()
 
-    def run(self, output_dir: str = base_dir+"/seed-compiled") -> None:
+    def run(self) -> None:
         """
         @brief Run the traffic generator
         """
         
+        output_dir = self._seedCompileDir
+
         self._parsePattern()
         
         docker = DockerClient(compose_files=[output_dir+"/docker-compose.yml"])
@@ -900,18 +912,95 @@ http {
         @brief Stop the traffic generator
         """
 
+        outtput_dir = self._seedCompileDir
+
         zipped_logs_path = self.zip_logs()
         print(f"Logs zipped to {zipped_logs_path}")
-        docker = DockerClient(compose_files=[base_dir+"/seed-compiled/docker-compose.yml"])
+        docker = DockerClient(compose_files=[outtput_dir+"/docker-compose.yml"])
         docker.compose.down()
 
 
 if __name__ == "__main__":
-    tg = TrafficGenerator(base_dir+"/pattern_sample.json")
+
+    parser = argparse.ArgumentParser(description="Traffic Generator")
+    parser.add_argument("-p","--pattern_file", help="The pattern file")
+    parser.add_argument("-w", "--wait_for_up", help="The time to wait for containers to be ready", default=15, type=int)
+    parser.add_argument("-s", "--seed_file", help="The seed bin file to use for emulation. You can obtain this by using emu.dump() before rendering a seed emulation")
+    parser.add_argument("-b", "--skip_build", help="skip the Build process. This can be helpful if you want to run several generations back to back. Note that some changes such as adding sig option to patterns require rebuilding", action="store_true")
+    parser.add_argument("-l", "--logdir", help="The directory to store logs", type=str)
+    parser.add_argument("-m", "--traffic_matrix", help="The traffic matrix file", type=str)
+    parser.add_argument("-ts", "--time_step", help="The time step for the traffic matrix", type=int)
+    parser.add_argument("-c", "--seed_compiled_dir", help="The directory to store the compiled seed emulation", type=str)
+
+    args = parser.parse_args()
+
+
+    if not args.pattern_file:
+        if not args.traffic_matrix:
+            print(f"no pattern file provided. Do you want to use {base_dir+'/pattern_sample.json'}? [y/n]")
+            response = input()
+            if response.lower() == "n":
+                exit(0)
+            else:
+                args.pattern_file = base_dir+"/pattern_sample.json"
+        else:
+            if not args.time_step:
+                print("no time step provided. Do you want to use 10s? [y/n]")
+                response = input()
+                if response.lower() == "n":
+                    exit(0)
+                else:
+                    args.time_step = 10
+            tm = TrafficMatrix()
+            tm.fromFile(args.traffic_matrix).setTimeStep(args.time_step).export(base_dir+"/pattern_matrix.json")
+            args.pattern_file = base_dir+"/pattern_matrix.json"
+
+
+
+    if not args.seed_file:
+        print(f"no seed file provided. Do you want to use {base_dir+'/seed.bin'}? [y/n]")
+        response = input()
+        if response.lower() == "n":
+            exit(0)
+        else:
+            args.seed_file = base_dir+"/seed.bin"
+
+    if not args.logdir:
+        print(f"no logdir provided. Do you want to use {base_dir+'/logs'}? [y/n]")
+        response = input()
+        if response.lower() == "n":
+            exit(0)
+        else:
+            args.logdir = base_dir+"/logs"
+
+    
+    if not args.seed_compiled_dir:
+        print(f"no seed compiled dir provided. Do you want to use {base_dir+'/seed-compiled'}? [y/n]")
+        response = input()
+        if response.lower() == "n":
+            exit(0)
+        else:
+            args.seed_compiled_dir = base_dir+"/seed-compiled"
+
+
+    tg = TrafficGenerator(args.pattern_file, args.wait_for_up, args.logdir, args.seed_compiled_dir)
+
+    # handle ctrl+c
     signal.signal(signal.SIGINT, partial(handler, tg))
-    tg.prepare(base_dir+"/scion-seed.bin") # TODO: add commandline arg
-    #tg.build() # TODO: add commandline arg
+    # pass seed topology
+    tg.prepare(args.seed_file) 
+    
+    if not args.skip_build:
+        tg.build()
+    
     tg.run()
+
     print("press CTRL+C to stop emulation\n\n\n")
-    while True:
-        pass
+    
+    signal.pause()
+
+
+# TODO: add commandline arg for generating from seed file directlyp
+# TODO: add pattern Matrix support directly into this script
+# TODO: add arg for custom webpage file
+# TODO: add option to specify the output directory for the compiled seed emulation
