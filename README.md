@@ -102,7 +102,7 @@ A pattern file such as the `pattern_sampl.json` is used to specify the traffic g
 
 Traffic Matrix is a way to specify traffic generation using a matrix. This allows for more complex traffic patterns to be generated. The matrix is specified in a csv file where each row corresponds to a pair of ASes and each collumn corresponds to a timestep. Timesteps can be set dynamicially the default is **10s**
 
-An Example of a traffic matrix is shown below:
+An Example of a traffic matrix is shown below and in the `TrafficMatrix.csv` file:
 
 
 ![Traffic Matrix](res/image.png)
