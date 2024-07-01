@@ -484,6 +484,7 @@ class TrafficGenerator():
         # order the patterns by start_offset
         self._traffic_pattern["traffic_patterns"] = sorted(self._traffic_pattern["traffic_patterns"], key=lambda x: x["start_offset"])
 
+       
 
         return
 
@@ -602,7 +603,7 @@ class TrafficGenerator():
             
         dirs = os.listdir(directoryPrefix)
 
-        print(f"Cloning webpages to {directoryPrefix} \n\n\n")
+        print(f"Cloning webpages to {directoryPrefix} \n")
         
         for webpage in webpages:
             if not webpage in dirs:
@@ -743,9 +744,17 @@ http {
         
         self._prepareSIGs()
         
+        # check if BGP should be added
+        modes = [pattern["mode"] for pattern in self._traffic_pattern["traffic_patterns"]]
+        if not ("iperf" in modes or "web" in modes):
+            print("Disabling BGP as no ipv4 applications in pattern")
+            self._enable_bgp = False
+
         # add bgp
         if self._enable_bgp:
             self._addBGP()        
+
+        print("\n\n\n")
 
     def _setUpBWTester(self, pattern: Dict[str, Union[str, Dict]], pattern_id: int) -> tuple[BWTestServer, BWTestClient]:
         """
@@ -953,7 +962,7 @@ if __name__ == "__main__":
 
     if not args.pattern_file:
         if not args.traffic_matrix:
-            print(f"no pattern file provided. Do you want to use {base_dir+'/pattern_sample.json'}? [y/n]")
+            print(f"no pattern file provided. Do you want to use {base_dir+'/pattern_sample.json'}? [Y/n]")
             response = input()
             if response.lower() == "n":
                 exit(0)
@@ -961,12 +970,12 @@ if __name__ == "__main__":
                 args.pattern_file = base_dir+"/pattern_sample.json"
         else:
             if not args.time_step:
-                print("no time step provided. Do you want to use 10s? [y/n]")
+                print("no time step provided. Do you want to use 10s? [Y/n]")
                 response = input()
                 if response.lower() == "n":
                     exit(0)
                 else:
-                    args.time_step = 10
+                    args.time_step = "10s"
             tm = TrafficMatrix()
             tm.fromFile(args.traffic_matrix).setTimeStep(args.time_step).export(base_dir+"/pattern_matrix.json")
             args.pattern_file = base_dir+"/pattern_matrix.json"
@@ -974,7 +983,7 @@ if __name__ == "__main__":
 
 
     if not args.seed_file:
-        print(f"no seed file provided. Do you want to use {base_dir+'/seed.bin'}? [y/n]")
+        print(f"no seed file provided. Do you want to use {base_dir+'/seed.bin'}? [Y/n]")
         response = input()
         if response.lower() == "n":
             exit(0)
@@ -982,7 +991,7 @@ if __name__ == "__main__":
             args.seed_file = base_dir+"/seed.bin"
 
     if not args.logdir:
-        print(f"no logdir provided. Do you want to use {base_dir+'/logs'}? [y/n]")
+        print(f"no logdir provided. Do you want to use {base_dir+'/logs'}? [Y/n]")
         response = input()
         if response.lower() == "n":
             exit(0)
@@ -991,7 +1000,7 @@ if __name__ == "__main__":
 
     
     if not args.seed_compiled_dir:
-        print(f"no seed compiled dir provided. Do you want to use {base_dir+'/seed-compiled'}? [y/n]")
+        print(f"no seed compiled dir provided. Do you want to use {base_dir+'/seed-compiled'}? [Y/n]")
         response = input()
         if response.lower() == "n":
             exit(0)
