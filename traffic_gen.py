@@ -1,26 +1,22 @@
 from __future__ import annotations
+from typing import List, Dict, Union
+from enum import Enum
+# SeedEmu imports
 from seedemu.compiler import Docker
 from seedemu.core import Emulator, Binding, ScionAutonomousSystem, Filter
 from seedemu.layers import ScionBase, EtcHosts, Scion, Ebgp, PeerRelationship, ScionIsd, Ibgp
 from seedemu.services import ScionSIGService
-
-
-from typing import List, Dict, Union
-
+# Python imports
 import time
-
 import os
 import json
 import shutil
 import signal
 from functools import partial
-
 import argparse
-
-from enum import Enum
-
+# Docker imports
 from python_on_whales import DockerClient
-
+# Traffic Matrix Support
 from traffic_matrix import TrafficMatrix
 
 
@@ -357,9 +353,10 @@ class TrafficGenerator():
     _wait_for_up: int
     _occupied_ports: Dict[int, int]
     _enable_bgp: bool = True # TODO: disable this if no ipv4 applications in pattern
-    _custom_webpages: bool = False # TODO: add cmdline arg
+    _custom_webpages: str = None
     _logDir: str
     _seedCompileDir: str
+    _webpage_dir: str = base_dir+"/webpages"
 
     def __init__(self, pattern_file: str, wait_for_up: int, logDir: str, seedCompileDir: str):
         
@@ -376,7 +373,7 @@ class TrafficGenerator():
 
         self._wait_for_up = wait_for_up
 
-        self._logDir = logDir
+        self._logDir = os.path.abspath(logDir)
 
         self._seedCompileDir = seedCompileDir
 
@@ -446,6 +443,20 @@ class TrafficGenerator():
         self._emu.addLayer(ebgp)
         self._emu.addLayer(Ibgp()) # add ibgp to ensure connectivity between all ASes
         
+    def setCustomWebPages(self, webpages: str) -> TrafficGenerator:
+        """
+        @brief Set the path to file with custom webpages
+        """
+        self._custom_webpages = webpages
+        return self
+
+    def setWebpageDir(self, webpage_dir: str) -> TrafficGenerator:
+        """
+        @brief Set the directory to clone webpages to
+        """
+        self._webpage_dir = webpage_dir
+        return self
+
     def getTrafficPattern(self) -> List[Dict[str, Union[str, Dict]]]:
         """
         @brief Get the traffic pattern
@@ -585,7 +596,7 @@ class TrafficGenerator():
         link_template = '<p><a href="{link}">{title}</a></p>\n'
         
 
-        directoryPrefix = base_dir+"/webpages"
+        directoryPrefix = self._webpage_dir
         if not os.path.exists(directoryPrefix):
             os.makedirs(directoryPrefix)
             
@@ -644,11 +655,14 @@ http {
         base: ScionBase = self._emu.getLayer("Base")
 
         if(not self._custom_webpages):
-            if not os.path.exists(base_dir+"/webpages.txt"):
-                raise ("webpages.txt not found please provide a file with a list of webpages to clone. Or set custom_webpages cmdline arg")
-            with open(base_dir + "/webpages.txt", "r") as f:
-                webpages = f.readlines()
-                webpages = [webpage.strip() for webpage in webpages]
+            self._custom_webpages = base_dir+"/webpages.txt"
+
+        if not os.path.exists(self._custom_webpages):
+            raise ("webpages.txt not found please provide a file with a list of webpages to clone.")
+        
+        with open(self._custom_webpages, "r") as f:
+            webpages = f.readlines()
+            webpages = [webpage.strip() for webpage in webpages]
 
         self._cloneWebPages(webpages)
         web_patterns = [pattern for pattern in self._traffic_pattern["traffic_patterns"] if pattern["mode"] == TrafficMode.web.value]
@@ -665,7 +679,7 @@ http {
             host = as_.getHost("traffic_gen")
             host.addSoftware("nginx-light")
             host.addSoftware("wget")
-            host.addSharedFolder("/var/www/html", base_dir+"/webpages")
+            host.addSharedFolder("/var/www/html", self._webpage_dir)
             host.setFile("/etc/nginx/nginx.conf", nginx_conf)
 
         for asn in client_asns:
@@ -833,8 +847,6 @@ http {
         pattern_id = 0
         
         # iterate through patterns which are ordered by start_offset
-        # TODO: add support for iperf and iperf-sig
-        # TODO: add progress bar
         for pattern in self._traffic_pattern["traffic_patterns"]:
             
             time.sleep(pattern["start_offset"]-old_offset)
@@ -919,7 +931,6 @@ http {
         docker = DockerClient(compose_files=[outtput_dir+"/docker-compose.yml"])
         docker.compose.down()
 
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Traffic Generator")
@@ -929,8 +940,10 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--skip_build", help="skip the Build process. This can be helpful if you want to run several generations back to back. Note that some changes such as adding sig option to patterns require rebuilding", action="store_true")
     parser.add_argument("-l", "--logdir", help="The directory to store logs", type=str)
     parser.add_argument("-m", "--traffic_matrix", help="The traffic matrix file", type=str)
-    parser.add_argument("-ts", "--time_step", help="The time step for the traffic matrix", type=int)
+    parser.add_argument("-ts", "--time_step", help="The time step for the traffic matrix", type=str)
     parser.add_argument("-c", "--seed_compiled_dir", help="The directory to store the compiled seed emulation", type=str)
+    parser.add_argument("-cw", "--custom_webpages", help="The file containing a list of webpages to clone", type=str)
+    parser.add_argument("-wd", "--webpage_dir", help="The directory to clone the webpages to", type=str)
 
     args = parser.parse_args()
 
@@ -985,6 +998,11 @@ if __name__ == "__main__":
 
     tg = TrafficGenerator(args.pattern_file, args.wait_for_up, args.logdir, args.seed_compiled_dir)
 
+    if args.custom_webpages:
+        tg.setCustomWebPages(args.custom_webpages)
+    if args.webpage_dir:
+        tg.setWebpageDir(args.webpage_dir)
+
     # handle ctrl+c
     signal.signal(signal.SIGINT, partial(handler, tg))
     # pass seed topology
@@ -998,9 +1016,3 @@ if __name__ == "__main__":
     print("press CTRL+C to stop emulation\n\n\n")
     
     signal.pause()
-
-
-# TODO: add commandline arg for generating from seed file directlyp
-# TODO: add pattern Matrix support directly into this script
-# TODO: add arg for custom webpage file
-# TODO: add option to specify the output directory for the compiled seed emulation

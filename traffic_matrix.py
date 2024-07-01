@@ -81,8 +81,11 @@ class TrafficMatrix():
 
     def export(self, file_path: str):
         patterns = self.toPattern()
+        export_obj = {
+            "traffic_patterns": patterns,
+        }
         with open(file_path, 'w') as file:
-            json.dump(patterns, file, indent=4)
+            json.dump(export_obj, file, indent=4)
 
 
 
