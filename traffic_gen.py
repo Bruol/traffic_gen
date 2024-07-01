@@ -831,6 +831,9 @@ http {
 
         webclient = WebClient(source_asn, dst_isd, dest_asn, log_file=f"webclient_{str(pattern_id)}.log")
 
+        if "dst_ip" in pattern:
+            webclient.setDstIP(pattern["dst_ip"])
+
         if "specialized_parameters" in pattern:
             for param in pattern["specialized_parameters"]:
                 webclient.appendArgs(param, pattern["specialized_parameters"][param])
