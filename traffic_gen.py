@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Tuple
 from enum import Enum
 # SeedEmu imports
 from seedemu.compiler import Docker
@@ -511,7 +511,7 @@ class TrafficGenerator():
         """
         @brief add sigs to traffic_gen nodes that need them
         """
-        supported_modes = [TrafficMode.IPerf.value]
+        supported_modes = [TrafficMode.IPerf.value, TrafficMode.web.value]
 
         sig_patterns = [pattern for pattern in self._traffic_pattern["traffic_patterns"] if (pattern["mode"] in supported_modes and "sig" in pattern and pattern["sig"] == True)]
 
@@ -525,49 +525,66 @@ class TrafficGenerator():
         sig_net = "172.16.{network}.0/24"
         network_index = 1
 
-        asns = []
+        # assign networks
+
+        asns = list(set([pattern["source"].split("-")[1] for pattern in sig_patterns] + [pattern["destination"].split("-")[1] for pattern in sig_patterns]))
+
+        networks: Dict[int, str] = {} # {asn: network}
+
+        for as_ in asns:
+            as_ = int(as_)
+            networks[as_] = sig_net.format(network=network_index)
+            network_index += 1
+
+        # parse connections to create configurations
+
+        other_datastructure: Dict[str,List[Tuple[int,int,str]]] = {} # {source_asn: [(dst_isd, dst_asn, dst_net)]}
 
         for pattern in sig_patterns:
+            source_as = int(pattern["source"].split("-")[1])
+            source_isd = int(pattern["source"].split("-")[0])
+            dest_as = int(pattern["destination"].split("-")[1])
+            dest_isd = int(pattern["destination"].split("-")[0])
+            source_net = networks[source_as]
+            dst_net = networks[dest_as]
+
+            if source_as in other_datastructure:
+                other_datastructure[source_as].append((dest_isd, dest_as, dst_net))
+            else:
+                other_datastructure[source_as] = [(dest_isd, dest_as, dst_net)]
+
+            if dest_as in other_datastructure:
+                other_datastructure[dest_as].append((source_isd, source_as, source_net))
+            else:
+                other_datastructure[dest_as] = [(source_isd, source_as, source_net)]
+
+            # set dst_ip in traffic pattern    
+            pattern["dst_ip"] = dst_net.replace("0/24", "1")
+
+
+
+        for asn in other_datastructure:
+
             
             # set up source
 
-            source_asn = int(pattern["source"].split("-")[1])
+            source_asn = asn
             source_as: ScionAutonomousSystem = base.getAutonomousSystem(source_asn)
-            source_node = source_as.createHost(f"sig{network_index}").joinNetwork("net0")
+            source_network_index = int(networks[source_asn].split(".")[2])
+            source_node = source_as.createHost(f"sig{source_network_index}").joinNetwork("net0")
 
 
-            source_as.setSigConfig(sig_name=f"sig{network_index}",
-                                   node_name=source_node.getName(),
-                                   other_ia=(int(pattern["destination"].split("-")[0]), int(pattern["destination"].split("-")[1])),
-                                   local_net=sig_net.format(network=network_index), 
-                                   remote_net=sig_net.format(network=network_index+1))
+            source_as.setSigConfig(sig_name = f"sig{source_network_index}", 
+                                   node_name=f"sig{source_network_index}", 
+                                   local_net = networks[source_asn],
+                                   other=other_datastructure[asn])
 
-            sig.install(f"sig{network_index}").setConfig(f"sig{network_index}", source_as.getSigConfig(f"sig{network_index}"))
+            sig.install(f"sig{source_network_index}").setConfig(f"sig{source_network_index}", source_as.getSigConfig(f"sig{source_network_index}"))
 
-            self._emu.addBinding(Binding(f"sig{network_index}", filter=Filter(nodeName=f"sig{network_index}", asn=source_asn)))
-
-
-            # set up destination
-            
-            dest_asn = int(pattern["destination"].split("-")[1])
-            dest_as: ScionAutonomousSystem = base.getAutonomousSystem(dest_asn)
-            dest_node = dest_as.createHost(f"sig{network_index+1}").joinNetwork("net0")
+            self._emu.addBinding(Binding(f"sig{source_network_index}", filter=Filter(nodeName=f"sig{source_network_index}", asn=source_asn)))
 
 
-            dest_as.setSigConfig(sig_name=f"sig{network_index+1}", 
-                                 node_name=dest_node.getName(), 
-                                 other_ia=(int(pattern["source"].split("-")[0]), int(pattern["source"].split("-")[1])),
-                                 local_net=sig_net.format(network=network_index+1), 
-                                 remote_net=sig_net.format(network=network_index))
 
-            sig.install(f"sig{network_index+1}").setConfig(f"sig{network_index+1}", dest_as.getSigConfig(f"sig{network_index+1}"))
-            
-            self._emu.addBinding(Binding(f"sig{network_index+1}", filter=Filter(nodeName=f"sig{network_index+1}", asn=dest_asn)))
-
-            # save dst_ip for later
-            pattern["dst_ip"] = sig_net.format(network=network_index+1).replace("0/24", "1")
-
-            network_index += 2
 
         self._emu.addLayer(sig)
 
