@@ -571,17 +571,16 @@ class TrafficGenerator():
             source_asn = asn
             source_as: ScionAutonomousSystem = base.getAutonomousSystem(source_asn)
             source_network_index = int(networks[source_asn].split(".")[2])
-            source_node = source_as.createHost(f"sig{source_network_index}").joinNetwork("net0")
 
 
             source_as.setSigConfig(sig_name = f"sig{source_network_index}", 
-                                   node_name=f"sig{source_network_index}", 
+                                   node_name="traffic_gen", 
                                    local_net = networks[source_asn],
                                    other=other_datastructure[asn])
 
             sig.install(f"sig{source_network_index}").setConfig(f"sig{source_network_index}", source_as.getSigConfig(f"sig{source_network_index}"))
 
-            self._emu.addBinding(Binding(f"sig{source_network_index}", filter=Filter(nodeName=f"sig{source_network_index}", asn=source_asn)))
+            self._emu.addBinding(Binding(f"sig{source_network_index}", filter=Filter(nodeName="traffic_gen", asn=source_asn)))
 
 
 
