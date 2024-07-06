@@ -10,6 +10,7 @@ This project is a simple traffic generator that allows to generate traffic on to
 - docker
 - docker compose
 - seedemu
+- scion-pki
 
 **install Requirements:**
 
