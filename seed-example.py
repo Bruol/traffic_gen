@@ -52,8 +52,6 @@ as_112_br1.crossConnect(110,'br2','10.3.0.11/29',latency=0,bandwidth=0,packetDro
 scion.addXcLink((1,110),(1,111),ScLinkType.Transit,a_router='br1',b_router='br1')
 scion.addXcLink((1,110),(1,112),ScLinkType.Transit,a_router='br2',b_router='br1')
 
-base.setTCBufferSize(10000) 
-base.setTCQueueSize(100)
 
 # Rendering
 emu.addLayer(base)

@@ -9,7 +9,7 @@ This project is a simple traffic generator that allows to generate traffic on to
 - pip version 24.0 or higher
 - docker
 - docker compose
-- seedemu
+- seedemu (version with SIG and link-properties support) -- [seedemu](https://github.com/Bruol/seed-emulator)
 - scion-pki
 
 **install Requirements:**

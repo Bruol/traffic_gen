@@ -888,6 +888,7 @@ http {
                 print(f"generating BWTESTER traffic from AS{pattern['source']} to AS{pattern['destination']}")
 
                 btserver.start()
+                time.sleep(0.1) # wait for server to be up
                 btclient.start()
             
             elif pattern["mode"] == TrafficMode.IPerf.value:
@@ -896,6 +897,7 @@ http {
                 print(f"generating IPERF traffic from AS{pattern['source']} to AS{pattern['destination']}")
 
                 ipserver.start()
+                time.sleep(0.1) # wait for server to be up
                 ipclient.start()
 
             elif pattern["mode"] == TrafficMode.web.value:
@@ -904,6 +906,7 @@ http {
                 webserver, webclient = self._setUpWeb(pattern, pattern_id)
 
                 webserver.start()
+                time.sleep(0.1) # wait for server to be up
                 webclient.start()
 
             else:
