@@ -375,12 +375,13 @@ class TrafficGenerator():
 
         self._logDir = os.path.abspath(logDir)
 
-        self._seedCompileDir = seedCompileDir
+        self._seedCompileDir = os.path.abspath(seedCompileDir)
 
-    def zip_logs(self, output_dir: str = "./logs"):  
+    def zip_logs(self):
         """
         @brief Zip the log files
         """
+        output_dir = ("/".join((self._logDir.split("/")[0:-1])))+ "/logs"
         shutil.make_archive(output_dir, 'zip', self._logDir)
         return output_dir+".zip"
 
@@ -454,7 +455,7 @@ class TrafficGenerator():
         """
         @brief Set the directory to clone webpages to
         """
-        self._webpage_dir = webpage_dir
+        self._webpage_dir = os.path.abspath(webpage_dir)
         return self
 
     def getTrafficPattern(self) -> List[Dict[str, Union[str, Dict]]]:
