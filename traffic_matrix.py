@@ -4,7 +4,8 @@ import json
 import os
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
-TRAFFIC_MATRIX_FILE = base_dir+"/TrafficMatrix.csv"
+#TRAFFIC_MATRIX_FILE = base_dir+"/TrafficMatrix.csv"
+TRAFFIC_MATRIX_FILE = base_dir+"/TrafficMatrix_2.csv"
 PATTERN_FILE = base_dir+"/pattern_matrix.json"
 
 class TrafficMatrix():
@@ -76,6 +77,8 @@ class TrafficMatrix():
         for p in patterns:
             if "duration" not in p["parameters"]:
                 p["parameters"]["duration"] = self._timeStepSeconds
+            else:
+                p["parameters"]["duration"] = int(p["parameters"]["duration"])
 
         return patterns
 
@@ -92,6 +95,6 @@ class TrafficMatrix():
 
 if __name__ == "__main__":
     tm = TrafficMatrix()
-    pattern = tm.fromFile(TRAFFIC_MATRIX_FILE).setTimeStep("10s").export(PATTERN_FILE)
+    tm.fromFile(TRAFFIC_MATRIX_FILE).setTimeStep("10s").export(PATTERN_FILE)
 
     
