@@ -24,34 +24,34 @@ To use the traffic generator you need two basic components. Firstly you will nee
 1. The seed emulation should be dumped to a file (`seed.bin` in this example) using the `emu.dump()` function
 2. The traffic pattern pattern specififes how the traffic should be generated. An example pattern file can be found in the `pattern_sample.json` file. Alternaticely one can also specify traffic using a traffic matrix this allows modulating traffic parameters such as bandwidth to be modulated over time. Check out the [Traffic Matrix](#Traffic-Matrix) section for more information.
 
-``bash
+```bash
 python3 traffic_gen.py 
-``
+```
 
 Here's the converted text in markdown format:
 
 ### Optional arguments:
 
-* `-h, --help`  : Show this help message and exit
-* `-p PATTERN_FILE, --pattern_file PATTERN_FILE`  : The pattern file
-* `-w WAIT_FOR_UP, --wait_for_up WAIT_FOR_UP`  : The time to wait for containers to be ready
-* `-s SEED_FILE, --seed_file SEED_FILE`  : 
+* `-h, --help`: Show this help message and exit
+* `-p PATTERN_FILE, --pattern_file PATTERN_FILE`: The pattern file
+* `-w WAIT_FOR_UP, --wait_for_up WAIT_FOR_UP`: The time to wait for containers to be ready
+* `-s SEED_FILE, --seed_file SEED_FILE`: 
     The seed bin file to use for emulation. You can obtain this by using
     `emu.dump()` before rendering a seed emulation
-* `-b, --skip_build`  : Skip the Build process. This can be helpful if you want to run several
+* `-b, --skip_build`: Skip the Build process. This can be helpful if you want to run several
     generations back to back. Note that some changes such as adding sig option to
     patterns require rebuilding
-* `-l LOGDIR, --logdir LOGDIR`  : The directory to store logs
-* `-m TRAFFIC_MATRIX, --traffic_matrix TRAFFIC_MATRIX`  : The traffic matrix file
-* `-ts TIME_STEP, --time_step TIME_STEP`  : The time step for the traffic matrix
-* `-c SEED_COMPILED_DIR, --seed_compiled_dir SEED_COMPILED_DIR`  : The directory to store the compiled seed emulation
-* `-cw CUSTOM_WEBPAGES, --custom_webpages CUSTOM_WEBPAGES`  : The file containing a list of webpages to clone
-* `-wd WEBPAGE_DIR, --webpage_dir WEBPAGE_DIR`  : The directory to clone the webpages to
+* `-l LOGDIR, --logdir LOGDIR`: The directory to store logs
+* `-m TRAFFIC_MATRIX, --traffic_matrix TRAFFIC_MATRIX`: The traffic matrix file
+* `-ts TIME_STEP, --time_step TIME_STEP`: The time step for the traffic matrix
+* `-c SEED_COMPILED_DIR, --seed_compiled_dir SEED_COMPILED_DIR`: The directory to store the compiled seed emulation
+* `-cw CUSTOM_WEBPAGES, --custom_webpages CUSTOM_WEBPAGES`: The file containing a list of webpages to clone
+* `-wd WEBPAGE_DIR, --webpage_dir WEBPAGE_DIR`: The directory to clone the webpages to
 
 
 ### Patterns
 
-A pattern file such as the `pattern_sampl.json` is used to specify the traffic generation parameters. It consists of a list of patterns which have the following structure:
+A pattern file such as the `pattern_sample.json` is used to specify the traffic generation parameters. It consists of a list of patterns which have the following structure:
     
 ```
 {

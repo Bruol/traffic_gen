@@ -925,7 +925,8 @@ http {
         output_dir = self._seedCompileDir
 
         self._emu.render()
-        self._emu.compile(Docker(internetMapEnabled=True), output_dir, override=True)
+        
+        self._emu.compile(Docker(internetMapEnabled=True, internetMapClientImage="bruol0/seedemu-client"), output_dir, override=True)
             
         docker = DockerClient(compose_files=[output_dir+"/docker-compose.yml"])
 

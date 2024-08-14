@@ -91,8 +91,6 @@ class TrafficMatrix():
             json.dump(export_obj, file, indent=4)
 
 
-
-
 if __name__ == "__main__":
     tm = TrafficMatrix()
     tm.fromFile(TRAFFIC_MATRIX_FILE).setTimeStep("10s").export(PATTERN_FILE)
